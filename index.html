@@ -1213,6 +1213,8 @@ function validCk(ck){
   var a=ck.split('.'),p=byId(PAPERS,a[0]);
   return !!(p&&a.length===2&&+a[1]>=0&&+a[1]<p.ch.length);
 }
+/* chapter used by Pomodoro: '' when the student chose "No subject" */
+function pck(){return S.pick==='none'?'':curCk()}
 function curCk(){
   if(validCk(S.pick))return S.pick;
   var nx=nextChapter();
@@ -1223,7 +1225,7 @@ function pomoRem(){var p=S.pomo;return p.end>0?Math.max(0,Math.round((p.end-Date
 function pomoTotal(){var p=S.pomo,c=S.pset;return p.m==='f'?c.f*60:(p.round%4===0?c.l*60:c.b*60)}
 function pomoNext(){
   var p=S.pomo,done=pomoTotal()-pomoRem();
-  if(p.m==='f'){if(done>=60)addLog(done,curCk());p.m='b'}else{p.m='f';p.round++}
+  if(p.m==='f'){if(done>=60&&!(S.timer&&+S.timer.startedAt))addLog(done,pck());p.m='b'}else{p.m='f';p.round++}
   p.end=0;p.rem=pomoTotal();
 }
 function pomoTick(){
@@ -1253,7 +1255,7 @@ function fmOpen(){
     fmEl.addEventListener('click',function(e){
       var t=e.target.closest('[data-act]');if(!t)return;var a=t.getAttribute('data-act');
       if(a==='fmclose')fmClose();
-      else if(a==='fmtoggle'){var q=S.pomo;if(q.end>0){q.rem=pomoRem();q.end=0}else{q.end=Date.now()+q.rem*1000;if(q.m==='f')S.now[curCk()]=1}save();fmTick();if(cur==='dash')render()}
+      else if(a==='fmtoggle'){var q=S.pomo;if(q.end>0){q.rem=pomoRem();q.end=0}else{q.end=Date.now()+q.rem*1000;if(q.m==='f'&&pck())S.now[pck()]=1}save();fmTick();if(cur==='dash')render()}
     });
   }
   fmEl.classList.add('on');document.documentElement.classList.add('fm-lock');fmTick();
@@ -1267,7 +1269,7 @@ function fmTick(){
   document.getElementById('fm-k').textContent=p.m==='f'?'Focus':'Break';
   document.getElementById('fm-tg').textContent=run?'Pause':'Resume';
   fmEl.classList.toggle('run',run);
-  var c=chapterOf(curCk());document.getElementById('fm-c').textContent=p.m==='f'?c.p.ch[c.ci][0]:'Rest your eyes for a moment';
+  var pk0=pck(),c=pk0?chapterOf(pk0):null;document.getElementById('fm-c').textContent=p.m==='f'?(c?c.p.ch[c.ci][0]:'Free focus'):'Rest your eyes for a moment';
 }
 setInterval(fmTick,1000);
 document.addEventListener('keydown',function(e){if(e.key==='Escape'&&fmEl&&fmEl.classList.contains('on'))fmClose()});
@@ -1278,7 +1280,7 @@ function pomoHtml(){
   var h='<section class="card pomo"><div class="pm-ring"><svg viewBox="0 0 100 100" aria-hidden="true"><circle class="trk" cx="50" cy="50" r="44"/><circle id="pm-a" class="arc" cx="50" cy="50" r="44" stroke-dasharray="'+PC+'" stroke-dashoffset="'+(PC*(1-r/pomoTotal()))+'"/></svg><div class="txt"><b id="pm-t">'+pad(Math.floor(r/60))+':'+pad(r%60)+'</b><span>'+(p.m==='f'?'Focus':'Break')+'</span></div></div>';
   h+='<div class="pm-body"><div class="chead"><span class="eyebrow">'+(run?'<i class="live"></i>':'')+'Pomodoro</span><span class="sub">Round '+(((p.round-1)%4)+1)+' of 4</span></div>';
   h+='<div class="btns"><button class="btn big" type="button" data-act="pomo">'+(run?'Pause':'Start')+'</button><button class="btn" type="button" data-act="focus">Focus</button><button class="btn" type="button" data-act="pomoskip">'+(p.m==='f'?'Skip':'Skip break')+'</button><button class="btn" type="button" data-act="pomoreset">Reset</button><button class="btn pm-gear'+(pmSet?' on':'')+'" type="button" data-act="pmset" aria-label="Set timer length" aria-expanded="'+pmSet+'" title="Set time"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 3h6"/></svg></button></div>';
-  h+='<p class="sub pm-note">'+(function(){var c=chapterOf(curCk());return 'Studying: '+esc(c.p.ch[c.ci][0])})()+'</p></div>';
+  h+='<p class="sub pm-note">'+(function(){var k=pck();if(!k)return 'No subject · time is saved to the heatmap without a chapter';var c=chapterOf(k);return 'Studying: '+esc(c.p.ch[c.ci][0])})()+'</p></div>';
   if(pmSet){
     h+='<div class="pm-set"><div class="pm-fields"><label>Focus<input id="pm-f" type="number" inputmode="numeric" min="1" max="180" value="'+ps.f+'"><small>min</small></label><label>Break<input id="pm-b" type="number" inputmode="numeric" min="1" max="90" value="'+ps.b+'"><small>min</small></label><label>Long break<input id="pm-l" type="number" inputmode="numeric" min="1" max="90" value="'+ps.l+'"><small>min</small></label></div>';
     h+='<p class="sub">Long break comes after every 4th focus round.'+(run?' New times apply from the next round.':'')+'</p><div class="pm-sa"><button class="btn pri" type="button" data-act="pmsave">Save</button><button class="btn" type="button" data-act="pmdef">25 / 5 / 15</button><button class="btn" type="button" data-act="pmset">Cancel</button></div></div>';
@@ -1687,12 +1689,16 @@ function renderDash(){
   /* continue studying: choose subject + chapter */
   var pk=chapterOf(curCk()),dis=tm?' disabled':'';
   h+='<section class="card cont"><div class="eyebrow">What are you studying?</div>';
-  h+='<div class="pick"><label class="nl" for="pk-p">Subject</label><select class="sel" id="pk-p" data-act="pickp"'+dis+'>';
+  var nosub=S.pick==='none';
+  h+='<div class="pick"><label class="nl" for="pk-p">Subject</label><select class="sel" id="pk-p" data-act="pickp"'+dis+'><option value="none"'+(nosub?' selected':'')+'>No subject (just Pomodoro)</option>';
   DATA.forEach(function(sb){
     h+='<optgroup label="'+EN[sb.id]+'">';
-    sb.papers.forEach(function(q){h+='<option value="'+q.id+'"'+(q.id===pk.p.id?' selected':'')+'>'+q.en+'</option>'});
+    sb.papers.forEach(function(q){h+='<option value="'+q.id+'"'+(!nosub&&q.id===pk.p.id?' selected':'')+'>'+q.en+'</option>'});
     h+='</optgroup>';
   });
+  if(nosub){
+    h+='</select></div><p class="sub">Nothing selected. Use the Pomodoro timer on its own, and its time is saved to your heatmap without a chapter. Pick a subject any time to track a chapter.</p></section>';
+  }else{
   h+='</select><label class="nl" for="pk-c">Chapter</label><select class="sel" id="pk-c" data-act="pickc"'+dis+'>';
   pk.p.ch.forEach(function(c,ci){h+='<option value="'+ci+'"'+(ci===pk.ci?' selected':'')+'>'+(ci+1)+'. '+esc(c[0])+'</option>'});
   h+='</select></div>';
@@ -1710,6 +1716,7 @@ function renderDash(){
     if(nx&&nx.ck!==curCk())h+='<button class="lnk" type="button" data-act="picknext" data-ck="'+nx.ck+'">Jump to next uncompleted chapter</button>';
   }
   h+='</section>';
+  }
 
   h+=nowHtml();
   h+=reviseHtml();
@@ -2258,7 +2265,7 @@ app.addEventListener('change',function(e){
     xp.ch.forEach(function(_,ci){exToggle(el.dataset.xk,xp.id+'.'+ci,el.checked)});
     exSync();
   }else if(act==='pickp'){
-    S.pick=el.value+'.0';save();render();
+    S.pick=el.value==='none'?'none':el.value+'.0';save();render();
   }else if(act==='pickc'){
     var pc=chapterOf(curCk());S.pick=pc.p.id+'.'+(+el.value);save();render();
   }else if(act==='goal'){
@@ -2533,7 +2540,7 @@ app.addEventListener('click',function(e){
   else if(act==='picknext'){S.pick=el.dataset.ck;save();render()}
   else if(act==='pomo'){
     var pp=S.pomo;
-    if(pp.end>0){pp.rem=pomoRem();pp.end=0}else{pp.end=Date.now()+pp.rem*1000;if(pp.m==='f')S.now[curCk()]=1;try{document.title='StudyMate'}catch(e){}}
+    if(pp.end>0){pp.rem=pomoRem();pp.end=0}else{pp.end=Date.now()+pp.rem*1000;if(pp.m==='f'&&pck())S.now[pck()]=1;try{document.title='StudyMate'}catch(e){}}
     save();render();
   }
   else if(act==='insttab'){
@@ -2553,11 +2560,11 @@ app.addEventListener('click',function(e){
     if(bi){var on=el.classList.contains('sel');document.querySelectorAll('.bdg.sel').forEach(function(x){x.classList.remove('sel');x.setAttribute('aria-pressed','false')});
       if(on)bi.textContent='Tap a badge to see what it needs.';else{el.classList.add('sel');el.setAttribute('aria-pressed','true');bi.textContent=el.getAttribute('data-t')}}
   }
-  else if(act==='focus'){var fp=S.pomo;if(!(fp.end>0)){fp.end=Date.now()+fp.rem*1000;if(fp.m==='f')S.now[curCk()]=1;save();render()}fmOpen()}
+  else if(act==='focus'){var fp=S.pomo;if(!(fp.end>0)){fp.end=Date.now()+fp.rem*1000;if(fp.m==='f'&&pck())S.now[pck()]=1;save();render()}fmOpen()}
   else if(act==='pomoskip'){pomoNext();save();render()}
   else if(act==='pomoreset'){
     var pq=S.pomo,dn=pomoTotal()-pomoRem();
-    if(pq.m==='f'&&dn>=60)addLog(dn,curCk());
+    if(pq.m==='f'&&dn>=60&&!(S.timer&&+S.timer.startedAt))addLog(dn,pck());
     pq.end=0;pq.rem=pomoTotal();save();render();
   }
   else if(act==='add'){addTopic(el.dataset.ck)}
