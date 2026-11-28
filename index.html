@@ -211,7 +211,14 @@ a{color:inherit;text-decoration:none}
 .cm-groups{display:flex;flex-wrap:wrap;gap:8px}
 .cm-g,.cm-tabs button{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 16px}
 .cm-g.on,.cm-tabs button.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
-.cm-tabs{display:flex;gap:8px;margin:12px 0}
+.cm-tabs{display:flex;gap:8px;margin:12px 0;flex-wrap:wrap}
+.rm-u{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--line)}.rm-u:first-child{border-top:0}
+.rm-u .cm-av{flex:none}.rm-m{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}.rm-m b{font-weight:600}.rm-m small{color:var(--muted)}
+.rm-t{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}.rm-off{opacity:.62}
+.rm-live{width:8px;height:8px;border-radius:50%;background:#3fae7a;display:inline-block;margin-right:6px;animation:rmp 1.6s infinite}
+@keyframes rmp{50%{opacity:.35}}
+.rm-h{display:flex;justify-content:space-between;font-size:.8rem;color:var(--muted);margin:0 0 6px}.rm-h b{color:#3fae7a}
+@media (prefers-reduced-motion:reduce){.rm-live{animation:none}}
 .cm-gh{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
 .cm-code{letter-spacing:.12em;font-family:ui-monospace,Menlo,Consolas,monospace;margin-right:8px}
 .cm-note{margin:6px 0;font-size:.92rem}
@@ -2751,6 +2758,52 @@ function cmLoadGroups(sel){
     if(CM.gid)cmOpenGroup();
   });
 }
+/* ===== Study room: who is studying right now ===== */
+var BT={sub:null,since:0,at:0,busy:false};
+function studyNow(){
+  var t=S.timer;
+  if(t&&+t.startedAt){var a=String(t.ck||'').split('.'),p=byId(PAPERS,a[0]);return p?p.en:'Studying'}
+  var q=S.pomo;if(q&&q.end>0&&q.m==='f')return 'Focus session';
+  return null;
+}
+function cmBeat(force){
+  if(!cmSb||!CM.user||BT.busy)return;
+  var sub=S.share?studyNow():null,now=Date.now();
+  if(!force&&sub===BT.sub&&!(sub&&now-BT.at>25000))return;
+  var since=sub?(BT.sub?BT.since:now):0;
+  BT.busy=true;
+  var row={studying_sub:sub,studying_since:sub?new Date(since).toISOString():null,studying_beat:sub?new Date(now).toISOString():null};
+  Promise.resolve(cmRun(cmSb.from('stats').update(row).eq('user_id',CM.user.id))).then(function(){
+    BT.sub=sub;BT.since=since;BT.at=now;BT.busy=false;
+    if(cur==='community'&&CM.tab==='room'&&CM.gid)cmLoadBoard();
+  }).catch(function(){BT.busy=false});
+}
+function cmRoomHtml(){
+  if(!CM.rows.length)return '<p class="sub">Loading…</p>';
+  var now=Date.now(),me=CM.user&&CM.user.id;
+  var rows=CM.rows.map(function(r){
+    var s=r.s||{},m=r.id===me,live=false,sub='',since=0;
+    if(m){var n=S.share?studyNow():null;if(n){live=true;sub=n;since=BT.sub?BT.since:now}}
+    else if(s.studying_sub&&s.studying_beat&&now-new Date(s.studying_beat).getTime()<90000){live=true;sub=s.studying_sub;since=s.studying_since?new Date(s.studying_since).getTime():now}
+    var hid=!m&&(!r.s||+s.topics_total===0);
+    return {id:r.id,name:r.name||'Student',m:m,live:live,sub:sub,since:since,hid:hid,off:m&&!S.share};
+  });
+  rows.sort(function(a,b){return (b.live-a.live)||(a.hid-b.hid)});
+  var nl=rows.filter(function(r){return r.live}).length;
+  var h='<div class="rm-h"><span>Friends in this group who are studying right now</span><b>'+nl+' studying</b></div>';
+  rows.forEach(function(r){
+    var st=r.live?'<span class="rm-live"></span>'+esc(r.sub):(r.hid?'Progress hidden':(r.off?'Sharing is off':'Not studying right now'));
+    h+='<div class="rm-u'+(r.live?'':' rm-off')+'"><span class="cm-av">'+esc(r.name.charAt(0).toUpperCase())+'</span><span class="rm-m"><b>'+esc(r.name)+(r.m?' (you)':'')+'</b><small>'+st+'</small></span>'+(r.live?'<span class="rm-t" data-since="'+r.since+'">'+fmt((now-r.since)/1000)+'</span>':'')+'</div>';
+  });
+  if(!nl)h+='<p class="sub" style="margin-top:12px">Nobody is studying right now. Start the timer and your friends will see you here.</p>';
+  else h+='<p class="sub" style="margin-top:12px">Start the timer or a focus session and you show up here automatically. Turn off "Sharing progress" to hide yourself.</p>';
+  return h;
+}
+setInterval(function(){
+  document.querySelectorAll('.rm-t[data-since]').forEach(function(e){e.textContent=fmt((Date.now()-(+e.dataset.since))/1000)});
+},1000);
+setInterval(function(){cmBeat();if(!document.hidden&&cur==='community'&&CM.tab==='room'&&CM.gid&&CM.user)cmLoadBoard()},15000);
+document.addEventListener('click',function(){setTimeout(function(){cmBeat()},120)});
 function cmLoadBoard(){
   var gid=CM.gid;if(!gid)return;
   cmRun(cmSb.from('members').select('user_id').eq('group_id',gid)).then(function(ms){
@@ -3134,8 +3187,8 @@ function cmMainHtml(){
   var g=cmGroup();
   if(g){
     h+='<section class="card"><div class="cm-gh"><div><h2>'+esc(g.name)+'</h2><p class="sub">Invite code: <b class="cm-code">'+esc(g.code)+'</b><button class="btn" type="button" data-act="cmcopy" data-code="'+esc(g.code)+'">Copy</button></p></div><button class="btn" type="button" data-act="cmleave">'+(CM.arm?'Tap again to leave':'Leave group')+'</button></div>';
-    h+='<div class="cm-tabs"><button type="button" class="'+(CM.tab==='board'?'on':'')+'" data-act="cmtab" data-tab="board">Leaderboard</button><button type="button" class="'+(CM.tab==='chat'?'on':'')+'" data-act="cmtab" data-tab="chat">Chat</button></div>';
-    h+=CM.tab==='chat'?cmChatHtml():cmBoardHtml();
+    h+='<div class="cm-tabs"><button type="button" class="'+(CM.tab==='board'?'on':'')+'" data-act="cmtab" data-tab="board">Leaderboard</button><button type="button" class="'+(CM.tab==='chat'?'on':'')+'" data-act="cmtab" data-tab="room">Study room</button><button type="button" class="'+(CM.tab==='chat'?'on':'')+'" data-act="cmtab" data-tab="chat">Chat</button></div>';
+    h+=CM.tab==='chat'?cmChatHtml():(CM.tab==='room'?cmRoomHtml():cmBoardHtml());
     h+='</section>';
   }
   return h;
@@ -3234,12 +3287,12 @@ function cmSend(){
 }
 function cmClick(el,act){
   if(act==='cmmode'){CM.mode=el.dataset.mode;CM.msg='';cmPaint()}
-  else if(act==='cmshare'){S.share=!S.share;save();cmPaint();cmPushStats()}
+  else if(act==='cmshare'){S.share=!S.share;save();cmPaint();cmPushStats();cmBeat(true)}
   else if(act==='cmbm'){CM.bm=el.dataset.bm;cmPaint()}
   else if(act==='cmauth'){cmAuth()}
   else if(act==='cmout'){soAsk()}
   else if(act==='cmsel'){CM.gid=el.dataset.id;CM.tab='board';CM.msg='';cmPaint();cmOpenGroup()}
-  else if(act==='cmtab'){CM.tab=el.dataset.tab;CM.msg='';cmPaint();if(CM.tab==='board')cmLoadBoard()}
+  else if(act==='cmtab'){CM.tab=el.dataset.tab;CM.msg='';cmPaint();if(CM.tab==='board'||CM.tab==='room')cmLoadBoard()}
   else if(act==='cmcreate'){cmCreate()}
   else if(act==='cmjoin'){cmJoin()}
   else if(act==='cmsend'){cmSend()}
