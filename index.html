@@ -211,6 +211,19 @@ a{color:inherit;text-decoration:none}
 .cm-groups{display:flex;flex-wrap:wrap;gap:8px}
 .cm-g,.cm-tabs button{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 16px}
 .cm-g.on,.cm-tabs button.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+.fm-lock{overflow:hidden}
+#fm-ov{position:fixed;inset:0;z-index:9400;background:#101012;color:#ededed;display:none;flex-direction:column;align-items:center;justify-content:center;gap:22px;padding:24px;text-align:center}
+#fm-ov.on{display:flex;animation:fmin .35s ease}@keyframes fmin{from{opacity:0}to{opacity:1}}
+.fm-k{font-size:.8rem;letter-spacing:.14em;text-transform:uppercase;color:#85858b}
+.fm-r{width:min(62vw,240px);aspect-ratio:1;border-radius:50%;border:2px solid rgba(232,178,74,.35);display:grid;place-items:center;box-shadow:0 0 70px rgba(232,178,74,.1)}
+#fm-ov.run .fm-r{animation:fmb 6s ease-in-out infinite}
+@keyframes fmb{50%{transform:scale(1.07);border-color:#e8b24a}}
+.fm-t{font-size:clamp(2.4rem,11vw,3.4rem);font-weight:600;font-variant-numeric:tabular-nums}
+.fm-c{color:#85858b;font-size:.95rem;max-width:320px;min-height:1.4em}
+.fm-b{display:flex;gap:10px;margin-top:6px}
+.fm-btn{font:inherit;border:1px solid rgba(237,237,237,.25);background:transparent;color:#ededed;border-radius:12px;padding:11px 22px;min-height:44px;cursor:pointer}
+.fm-btn.pri{background:#e8b24a;color:#141415;border-color:#e8b24a;font-weight:600}
+@media (prefers-reduced-motion:reduce){#fm-ov.run .fm-r{animation:none}}
 .cm-tabs{display:flex;gap:8px;margin:12px 0;flex-wrap:wrap}
 .rm-u{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--line)}.rm-u:first-child{border-top:0}
 .rm-u .cm-av{flex:none}.rm-m{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}.rm-m b{font-weight:600}.rm-m small{color:var(--muted)}
@@ -1230,13 +1243,41 @@ function pomoTick(){
   }
 }
 var PC=2*Math.PI*44;
+/* ===== Focus mode: full screen timer ===== */
+var fmEl=null;
+function fmOpen(){
+  if(!fmEl){
+    fmEl=document.createElement('div');fmEl.id='fm-ov';fmEl.setAttribute('role','dialog');fmEl.setAttribute('aria-modal','true');fmEl.setAttribute('aria-label','Focus mode');
+    fmEl.innerHTML='<div class="fm-k" id="fm-k">Focus</div><div class="fm-r"><div class="fm-t" id="fm-t">25:00</div></div><div class="fm-c" id="fm-c"></div><div class="fm-b"><button class="fm-btn pri" type="button" data-act="fmtoggle" id="fm-tg">Pause</button><button class="fm-btn" type="button" data-act="fmclose">Exit</button></div>';
+    document.body.appendChild(fmEl);
+    fmEl.addEventListener('click',function(e){
+      var t=e.target.closest('[data-act]');if(!t)return;var a=t.getAttribute('data-act');
+      if(a==='fmclose')fmClose();
+      else if(a==='fmtoggle'){var q=S.pomo;if(q.end>0){q.rem=pomoRem();q.end=0}else{q.end=Date.now()+q.rem*1000;if(q.m==='f')S.now[curCk()]=1}save();fmTick();if(cur==='dash')render()}
+    });
+  }
+  fmEl.classList.add('on');document.documentElement.classList.add('fm-lock');fmTick();
+  var b=document.getElementById('fm-tg');if(b)try{b.focus()}catch(e){}
+}
+function fmClose(){if(fmEl)fmEl.classList.remove('on');document.documentElement.classList.remove('fm-lock')}
+function fmTick(){
+  if(!fmEl||!fmEl.classList.contains('on'))return;
+  var p=S.pomo,r=pomoRem(),run=p.end>0;
+  document.getElementById('fm-t').textContent=pad(Math.floor(r/60))+':'+pad(r%60);
+  document.getElementById('fm-k').textContent=p.m==='f'?'Focus':'Break';
+  document.getElementById('fm-tg').textContent=run?'Pause':'Resume';
+  fmEl.classList.toggle('run',run);
+  var c=chapterOf(curCk());document.getElementById('fm-c').textContent=p.m==='f'?c.p.ch[c.ci][0]:'Rest your eyes for a moment';
+}
+setInterval(fmTick,1000);
+document.addEventListener('keydown',function(e){if(e.key==='Escape'&&fmEl&&fmEl.classList.contains('on'))fmClose()});
 setInterval(pomoTick,1000);
 var pmSet=false;
 function pomoHtml(){
   var p=S.pomo,r=pomoRem(),run=p.end>0,ps=S.pset;
   var h='<section class="card pomo"><div class="pm-ring"><svg viewBox="0 0 100 100" aria-hidden="true"><circle class="trk" cx="50" cy="50" r="44"/><circle id="pm-a" class="arc" cx="50" cy="50" r="44" stroke-dasharray="'+PC+'" stroke-dashoffset="'+(PC*(1-r/pomoTotal()))+'"/></svg><div class="txt"><b id="pm-t">'+pad(Math.floor(r/60))+':'+pad(r%60)+'</b><span>'+(p.m==='f'?'Focus':'Break')+'</span></div></div>';
   h+='<div class="pm-body"><div class="chead"><span class="eyebrow">'+(run?'<i class="live"></i>':'')+'Pomodoro</span><span class="sub">Round '+(((p.round-1)%4)+1)+' of 4</span></div>';
-  h+='<div class="btns"><button class="btn big" type="button" data-act="pomo">'+(run?'Pause':'Start')+'</button><button class="btn" type="button" data-act="pomoskip">'+(p.m==='f'?'Skip':'Skip break')+'</button><button class="btn" type="button" data-act="pomoreset">Reset</button><button class="btn pm-gear'+(pmSet?' on':'')+'" type="button" data-act="pmset" aria-label="Set timer length" aria-expanded="'+pmSet+'" title="Set time"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 3h6"/></svg></button></div>';
+  h+='<div class="btns"><button class="btn big" type="button" data-act="pomo">'+(run?'Pause':'Start')+'</button><button class="btn" type="button" data-act="focus">Focus</button><button class="btn" type="button" data-act="pomoskip">'+(p.m==='f'?'Skip':'Skip break')+'</button><button class="btn" type="button" data-act="pomoreset">Reset</button><button class="btn pm-gear'+(pmSet?' on':'')+'" type="button" data-act="pmset" aria-label="Set timer length" aria-expanded="'+pmSet+'" title="Set time"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 3h6"/></svg></button></div>';
   h+='<p class="sub pm-note">'+(function(){var c=chapterOf(curCk());return 'Studying: '+esc(c.p.ch[c.ci][0])})()+'</p></div>';
   if(pmSet){
     h+='<div class="pm-set"><div class="pm-fields"><label>Focus<input id="pm-f" type="number" inputmode="numeric" min="1" max="180" value="'+ps.f+'"><small>min</small></label><label>Break<input id="pm-b" type="number" inputmode="numeric" min="1" max="90" value="'+ps.b+'"><small>min</small></label><label>Long break<input id="pm-l" type="number" inputmode="numeric" min="1" max="90" value="'+ps.l+'"><small>min</small></label></div>';
@@ -2512,6 +2553,7 @@ app.addEventListener('click',function(e){
     if(bi){var on=el.classList.contains('sel');document.querySelectorAll('.bdg.sel').forEach(function(x){x.classList.remove('sel');x.setAttribute('aria-pressed','false')});
       if(on)bi.textContent='Tap a badge to see what it needs.';else{el.classList.add('sel');el.setAttribute('aria-pressed','true');bi.textContent=el.getAttribute('data-t')}}
   }
+  else if(act==='focus'){var fp=S.pomo;if(!(fp.end>0)){fp.end=Date.now()+fp.rem*1000;if(fp.m==='f')S.now[curCk()]=1;save();render()}fmOpen()}
   else if(act==='pomoskip'){pomoNext();save();render()}
   else if(act==='pomoreset'){
     var pq=S.pomo,dn=pomoTotal()-pomoRem();
